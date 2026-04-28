@@ -137,7 +137,7 @@ export function InstructorRoundsView() {
       await courseMaterialApi.createZoom({
         courseRoundId: selectedRound.courseRoundId,
         createdByAccountId: Number(user.id),
-        weekId: 0,
+        weekId: null,
         title: meetingForm.topic,
         description: meetingForm.description,
         startTimeUtc: new Date(meetingForm.meetingDateTime).toISOString(),

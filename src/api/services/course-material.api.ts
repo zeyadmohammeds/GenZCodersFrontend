@@ -8,7 +8,8 @@ const unwrap = <T>(res: AxiosResponse<T>): T => res.data;
 
 export interface CreateCourseMaterialRequest {
   courseRoundId: number;
-  weekId: number;
+  createdByAccountId: number;
+  weekId?: number | null;
   parentMaterialId?: number | null;
   materialTypeStatusId?: number;
   title: string;
@@ -39,7 +40,7 @@ export interface PatchCourseMaterialRequest {
 export interface CreateZoomCourseMaterialRequest {
   courseRoundId: number;
   createdByAccountId: number;
-  weekId: number;
+  weekId?: number | null;
   title: string;
   description?: string;
   startTimeUtc: string;
@@ -49,6 +50,17 @@ export interface CreateZoomCourseMaterialRequest {
 export interface ZoomSignatureResponse {
   signature: string;
   sdkKey?: string; // deprecated - no longer required for Meeting SDK Web join
+}
+
+export interface CreatePdfCourseMaterialRequest {
+  courseRoundId: number;
+  createdByAccountId: number;
+  weekId?: number | null;
+  parentMaterialId?: number | null;
+  materialTypeStatusId?: number;
+  title: string;
+  description?: string;
+  file: File;
 }
 
 export const courseMaterialApi = {
@@ -81,6 +93,23 @@ export const courseMaterialApi = {
 
   createZoom: async (payload: CreateZoomCourseMaterialRequest): Promise<MaterialDto> => {
     const res = await http.post<MaterialDto>('/api/CourseMaterial/zoom', payload);
+    return unwrap(res);
+  },
+
+  createPdf: async (payload: CreatePdfCourseMaterialRequest): Promise<MaterialDto> => {
+    const formData = new FormData();
+    formData.append('courseRoundId', String(payload.courseRoundId));
+    formData.append('createdByAccountId', String(payload.createdByAccountId));
+    if (payload.weekId != null) formData.append('weekId', String(payload.weekId));
+    if (payload.parentMaterialId != null) formData.append('parentMaterialId', String(payload.parentMaterialId));
+    if (payload.materialTypeStatusId != null) formData.append('materialTypeStatusId', String(payload.materialTypeStatusId));
+    formData.append('title', payload.title);
+    if (payload.description) formData.append('description', payload.description);
+    formData.append('file', payload.file);
+
+    const res = await http.post<MaterialDto>('/api/CourseMaterial/pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return unwrap(res);
   },
 

@@ -1,6 +1,6 @@
 import type { Course } from 'src/types/course';
 import type { WeekDto } from 'src/api/models/week';
-import type { InstructorDto } from 'src/api/services/account.api';
+import type { MaterialDto } from 'src/api/models/material';
 
 import { useTranslation } from 'react-i18next';
 import { useMemo, useState, useEffect, useCallback } from 'react';
@@ -40,7 +40,7 @@ import { useAuth } from 'src/contexts/simple-auth-context';
 import { useCoursesContext } from 'src/contexts/courses-context';
 import { useApplicationsContext } from 'src/contexts/applications-context';
 import { useCourseRoundsContext } from 'src/contexts/course-rounds-context';
-import { weekApi, ApiError, mediaApi, accountApi, applicationApi, courseRoundApi } from 'src/api';
+import { weekApi, ApiError, mediaApi, applicationApi, courseRoundApi, courseMaterialApi } from 'src/api';
 
 import { Iconly } from 'src/components/iconly';
 import { Iconify } from 'src/components/iconify';
@@ -254,11 +254,11 @@ export function CoursesListView() {
   // Details dialog state
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [detailsCourse, setDetailsCourse] = useState<Course | null>(null);
-  const [detailsWeeks, setDetailsWeeks] = useState<WeekDto[]>([]);
   const [detailsWeekTitles, setDetailsWeekTitles] = useState<string[]>([]);
   const [detailsRoundInstructorName, setDetailsRoundInstructorName] = useState<string>('');
   const [detailsSelectedRoundId, setDetailsSelectedRoundId] = useState<string>('');
-  const [instructors, setInstructors] = useState<InstructorDto[]>([]);
+  const [materialsByRound, setMaterialsByRound] = useState<Record<string, MaterialDto[]>>({});
+  const [weeksByRound, setWeeksByRound] = useState<Record<string, WeekDto[]>>({});
 
   const isEnrolledInDetailsCourse = useMemo(() => {
     if (!hasRole('student')) return false;
@@ -302,10 +302,17 @@ export function CoursesListView() {
       }
 
       try {
-        const dto = await courseRoundApi.getById(Number(detailsSelectedRoundId));
+        const [dto, ws, mats] = await Promise.all([
+          courseRoundApi.getById(Number(detailsSelectedRoundId)),
+          weekApi.getByCourseRoundId(Number(detailsSelectedRoundId)).catch(() => []),
+          courseMaterialApi.getByCourseRoundId(Number(detailsSelectedRoundId)).catch(() => []),
+        ]);
+
         if (cancelled) return;
         setDetailsWeekTitles(Array.isArray(dto.weekTitles) ? dto.weekTitles : []);
         setDetailsRoundInstructorName(typeof dto.instructorName === 'string' ? dto.instructorName : '');
+        setWeeksByRound((prev) => ({ ...prev, [detailsSelectedRoundId]: ws }));
+        setMaterialsByRound((prev) => ({ ...prev, [detailsSelectedRoundId]: mats }));
       } catch {
         if (cancelled) return;
         setDetailsWeekTitles([]);
@@ -325,65 +332,6 @@ export function CoursesListView() {
     setDetailsSelectedRoundId(preferred);
   }, [detailsAllRounds, detailsRoundId, detailsSelectedRoundId]);
 
-  const detailsInstructorName = useMemo(() => {
-    const fallback = detailsCourse?.instructor ?? '';
-    if (fallback.trim()) return fallback;
-    const id = detailsCourse?.instructorId;
-    if (!id) return '';
-    const inst = instructors.find((i) => String(i.id) === String(id));
-    return inst?.fullName ?? '';
-  }, [detailsCourse?.instructor, detailsCourse?.instructorId, instructors]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadInstructors = async () => {
-      try {
-        const data = await accountApi.getInstructors();
-        if (cancelled) return;
-        setInstructors(data);
-      } catch {
-        if (cancelled) return;
-        setInstructors([]);
-      }
-    };
-
-    loadInstructors();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadWeeks = async () => {
-      if (!detailsSelectedRoundId) {
-        setDetailsWeeks([]);
-        return;
-      }
-
-      if (detailsWeekTitles.length > 0) {
-        setDetailsWeeks([]);
-        return;
-      }
-
-      try {
-        const ws = await weekApi.getByCourseRoundId(Number(detailsSelectedRoundId));
-        if (cancelled) return;
-        setDetailsWeeks(ws);
-      } catch {
-        if (cancelled) return;
-        setDetailsWeeks([]);
-      }
-    };
-
-    loadWeeks();
-    return () => {
-      cancelled = true;
-    };
-  }, [detailsSelectedRoundId, detailsWeekTitles.length]);
-
   const sampleSyllabus = [
     'Introduction to Programming Concepts',
     'Variables and Data Types',
@@ -396,6 +344,32 @@ export function CoursesListView() {
     'Web Development Basics',
     'Final Project and Assessment',
   ];
+
+  const syllabusData = useMemo(() => {
+    if (!detailsSelectedRoundId) return [];
+    const ws = weeksByRound[detailsSelectedRoundId] || [];
+    const mats = materialsByRound[detailsSelectedRoundId] || [];
+
+    if (ws.length === 0) {
+      return detailsWeekTitles.length > 0 ? detailsWeekTitles : sampleSyllabus;
+    }
+
+    return ws
+      .sort((a, b) => {
+        const da = a.startDate ? new Date(a.startDate).getTime() : 0;
+        const db = b.startDate ? new Date(b.startDate).getTime() : 0;
+        return da - db;
+      })
+      .map((w) => {
+        const weekMats = mats.filter((m) => Number(m.weekId) === Number(w.id));
+        return {
+          title: w.weekTitle || w.title || `Week ${w.id}`,
+          lessonsCount: weekMats.length,
+          materials: weekMats,
+        };
+      });
+  }, [detailsSelectedRoundId, weeksByRound, materialsByRound, detailsWeekTitles, sampleSyllabus]);
+
 
   const filteredRounds = useMemo(() => {
     let result = allRoundCards.filter((x) => isRoundVisibleForRole(x.round));
@@ -680,27 +654,6 @@ export function CoursesListView() {
     }
   }, [assignStudentsToRound, cloudName, currentApplicationId, paymentSelectedFile, refreshRoundCounts, selectedCourse, selectedRound, uploadPreset, user?.id]);
 
-  // Removed unused openPayment callback
-  const getInstructorNameById = useCallback(
-    (id: string | undefined) => {
-      if (!id) return '';
-      const inst = instructors.find((i) => String(i.id) === String(id));
-      if (inst?.fullName) return inst.fullName;
-      return id;
-    },
-    [instructors]
-  );
-
-  const getInstructorNameByRoundId = useCallback(
-    (roundId: string | undefined) => {
-      if (!roundId) return '';
-      const round = rounds.find((r) => String(r.id) === String(roundId));
-      if (round?.createdByName) return round.createdByName;
-      return getInstructorNameById(round?.createdBy);
-    },
-    [getInstructorNameById, rounds]
-  );
-
   const getLevelColor = (level: string) => {
     switch(level) {
       case 'beginner': return { bg: theme.palette.success.light, color: theme.palette.success.darker };
@@ -774,7 +727,7 @@ export function CoursesListView() {
   const renderCourseGridCard = (params: (typeof filteredRounds)[number]) => {
     const { course, round, price } = params;
     const levelColors = getLevelColor(course.level);
-    const roundInstructorName = getInstructorNameById(round.createdBy) || course.instructor;
+    const roundInstructorName = round.createdByName || course.instructor;
     const roundStudentsCount = acceptedCountByRoundId[String(round.id)] ?? 0;
     const canApply = hasRole('student') && isRoundOpenToEnrollment(round);
     
@@ -971,7 +924,7 @@ export function CoursesListView() {
   const renderCourseListCard = (params: (typeof filteredRounds)[number]) => {
     const { course, round, price } = params;
     const levelColors = getLevelColor(course.level);
-    const roundInstructorName = getInstructorNameById(round.createdBy) || course.instructor;
+    const roundInstructorName = round.createdByName || course.instructor;
     const roundStudentsCount = acceptedCountByRoundId[String(round.id)] ?? 0;
     const canApply = hasRole('student') && isRoundOpenToEnrollment(round);
     
@@ -1065,7 +1018,7 @@ export function CoursesListView() {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Iconify icon="solar:user-bold-duotone" width={20} sx={{ color: 'primary.main' }} />
               <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-                {detailsRoundInstructorName || getInstructorNameByRoundId(detailsSelectedRoundId) || detailsInstructorName || '—'}
+                {detailsRoundInstructorName || '—'}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1626,7 +1579,7 @@ export function CoursesListView() {
 
               <Box>
                 <Typography variant="overline" sx={{ color: 'primary.main', fontWeight: 800, letterSpacing: 1 }}>
-                  INSTRUCTOR: {detailsRoundInstructorName || getInstructorNameByRoundId(detailsSelectedRoundId) || detailsInstructorName || '—'}
+                  INSTRUCTOR: {detailsRoundInstructorName || '—'}
                 </Typography>
                 <Typography variant="h3" sx={{ fontWeight: 900, mb: 1.5, mt: 0.5 }}>
                   {detailsCourse?.name}
@@ -1715,30 +1668,71 @@ export function CoursesListView() {
               <Card variant="outlined">
                 <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>
-                    What you&apos;ll learn
+                    Curriculum Overview
                   </Typography>
-                  <Box component="ul" sx={{ pl: 2.5, m: 0, typography: 'body2', color: 'text.secondary', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                    {(
-                      detailsWeekTitles.length > 0
-                        ? detailsWeekTitles
-                        : detailsWeeks.length > 0
-                          ? detailsWeeks.map((w) => w.weekTitle ?? w.title ?? '').filter((x) => x.trim() !== '')
-                          : sampleSyllabus
-                    ).map((topic, i) => (
-                      <li key={i}>{topic}</li>
-                    ))}
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {Array.isArray(syllabusData) && typeof syllabusData[0] === 'object' ? (
+                      (syllabusData as any[]).map((week, i) => (
+                        <Box key={i} sx={{ p: 1.5, borderRadius: 1.5, bgcolor: alpha(theme.palette.primary.main, 0.04), border: `1px solid ${alpha(theme.palette.primary.main, 0.08)}` }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                              {week.title}
+                            </Typography>
+                            <Chip size="small" label={`${week.lessonsCount} Lessons`} sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }} />
+                          </Box>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                            {week.materials?.slice(0, 3).map((m: any) => m.title).join(', ')}
+                            {week.materials?.length > 3 ? ' ...' : ''}
+                          </Typography>
+                        </Box>
+                      ))
+                    ) : (
+                      <Box component="ul" sx={{ pl: 2.5, m: 0, typography: 'body2', color: 'text.secondary', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                        {(syllabusData as string[]).map((topic, i) => (
+                          <li key={i}>{topic}</li>
+                        ))}
+                      </Box>
+                    )}
                   </Box>
                 </CardContent>
               </Card>
 
               <Card variant="outlined">
-                <CardContent>
+                  <CardContent>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>Course details</Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    <Typography variant="body2"><strong>Instructor:</strong> {detailsRoundInstructorName || getInstructorNameByRoundId(detailsSelectedRoundId) || detailsInstructorName || '—'}</Typography>
-                    <Typography variant="body2"><strong>Duration:</strong> {detailsCourse?.duration}h</Typography>
-                    <Typography variant="body2"><strong>Students:</strong> {acceptedCountByRoundId[String(detailsSelectedRoundId)] ?? 0}</Typography>
-                    <Typography variant="body2"><strong>Price:</strong> {(detailsSelectedRound?.price ?? detailsCourse?.price) ?? 0} EGP</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Iconify icon="solar:user-bold" width={20} sx={{ color: 'primary.main' }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Instructor</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{detailsRoundInstructorName || '—'}</Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Iconify icon="solar:calendar-bold" width={20} sx={{ color: 'info.main' }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Weeks</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{Array.isArray(syllabusData) ? syllabusData.length : 0} Weeks</Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Iconify icon="solar:videocamera-record-bold" width={20} sx={{ color: 'success.main' }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Total Lessons</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {Array.isArray(syllabusData) && typeof syllabusData[0] === 'object' 
+                            ? (syllabusData as any[]).reduce((sum, w) => sum + (w.lessonsCount || 0), 0) 
+                            : 0} Lessons
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Iconify icon="solar:wad-of-money-bold" width={20} sx={{ color: 'warning.main' }} />
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Price</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: 'primary.main' }}>{(detailsSelectedRound?.price ?? detailsCourse?.price) ?? 0} EGP</Typography>
+                      </Box>
+                    </Box>
                   </Box>
                 </CardContent>
               </Card>

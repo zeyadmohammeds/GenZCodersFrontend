@@ -422,6 +422,11 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
     return ownsCourse || ownsAnyRoundInCourse;
   }, [hasRole, resolvedCourse?.instructorId, roundsForCourse, user?.id]);
 
+  const [materials, setMaterials] = useState<MaterialDto[]>([]);
+  const [weeks, setWeeks] = useState<WeekDto[]>([]);
+  const [weekDetailsById, setWeekDetailsById] = useState<Record<string, WeekDto>>({});
+  const [roundDataError, setRoundDataError] = useState<string>('');
+
   const displayCourse = useMemo(
     () => ({
       id: courseId,
@@ -436,19 +441,14 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
       language: '',
       price: resolvedCourse?.price ?? 0,
       students: resolvedCourse?.students ?? 0,
-      totalLessons: resolvedCourse?.content?.totalLessons ?? 0,
+      totalLessons: materials.length || (resolvedCourse?.content?.totalLessons ?? 0),
       completedLessons: 0,
       nextClass: null as Date | null,
       zoomLink: '',
       syllabus: [] as string[],
     }),
-    [courseId, resolvedCourse]
+    [courseId, resolvedCourse, materials.length]
   );
-
-  const [materials, setMaterials] = useState<MaterialDto[]>([]);
-  const [weeks, setWeeks] = useState<WeekDto[]>([]);
-  const [weekDetailsById, setWeekDetailsById] = useState<Record<string, WeekDto>>({});
-  const [roundDataError, setRoundDataError] = useState<string>('');
 
   const copyToClipboard = useCallback(async (value: string) => {
     try {
@@ -545,6 +545,7 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
     materialTypeStatusId: 35,
     weekId: 0,
     parentMaterialId: null as number | null,
+    file: null as File | null,
   });
   const [selectedWeekForMaterial, setSelectedWeekForMaterial] = useState<number | null>(null);
   const [selectedParentMaterialId, setSelectedParentMaterialId] = useState<number | null>(null);
@@ -716,7 +717,7 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
   const handleOpenAddMaterialForWeek = useCallback((weekId: number) => {
     setSelectedWeekForMaterial(weekId);
     setSelectedParentMaterialId(null);
-    setMaterialForm({ title: '', description: '', link: '', materialTypeStatusId: 35, weekId, parentMaterialId: null });
+    setMaterialForm({ title: '', description: '', link: '', materialTypeStatusId: 35, weekId, parentMaterialId: null, file: null });
     setMaterialDialogOpen(true);
   }, []);
 
@@ -732,29 +733,48 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
       materialTypeStatusId: 35,
       weekId,
       parentMaterialId: material.id,
+      file: null,
     });
     setMaterialDialogOpen(true);
   }, []);
 
   const handleCreateMaterial = useCallback(async () => {
     if (!activeRoundId || !selectedWeekForMaterial) return;
-    if (!materialForm.title.trim() || !materialForm.link.trim()) return;
-    if (!isValidHttpUrl(materialForm.link.trim())) {
+    if (!materialForm.title.trim()) return;
+    if (!materialForm.link.trim() && !materialForm.file) {
+      setRoundDataError('Please provide either a link or a file.');
+      return;
+    }
+    if (materialForm.link.trim() && !isValidHttpUrl(materialForm.link.trim())) {
       setRoundDataError('Please enter a valid URL for the material link.');
       return;
     }
     try {
-      await courseMaterialApi.create({
-        courseRoundId: Number(activeRoundId),
-        weekId: selectedWeekForMaterial,
-        parentMaterialId: selectedParentMaterialId ?? undefined,
-        title: materialForm.title.trim(),
-        description: materialForm.description.trim() || undefined,
-        link: materialForm.link.trim(),
-        materialTypeStatusId: Number(materialForm.materialTypeStatusId) || 35,
-      });
+      if (materialForm.file) {
+        await courseMaterialApi.createPdf({
+          courseRoundId: Number(activeRoundId),
+          createdByAccountId: Number(user?.id),
+          weekId: selectedWeekForMaterial,
+          parentMaterialId: selectedParentMaterialId ?? undefined,
+          title: materialForm.title.trim(),
+          description: materialForm.description.trim() || undefined,
+          materialTypeStatusId: Number(materialForm.materialTypeStatusId) || 32,
+          file: materialForm.file,
+        } as any);
+      } else {
+        await courseMaterialApi.create({
+          courseRoundId: Number(activeRoundId),
+          createdByAccountId: Number(user?.id),
+          weekId: selectedWeekForMaterial,
+          parentMaterialId: selectedParentMaterialId ?? undefined,
+          title: materialForm.title.trim(),
+          description: materialForm.description.trim() || undefined,
+          link: materialForm.link.trim(),
+          materialTypeStatusId: Number(materialForm.materialTypeStatusId) || 35,
+        });
+      }
       setMaterialDialogOpen(false);
-      setMaterialForm({ title: '', description: '', link: '', materialTypeStatusId: 35, weekId: 0, parentMaterialId: null });
+      setMaterialForm({ title: '', description: '', link: '', materialTypeStatusId: 35, weekId: 0, parentMaterialId: null, file: null });
       setSelectedWeekForMaterial(null);
       setSelectedParentMaterialId(null);
       setSuccessMessage('Material added successfully.');
@@ -821,10 +841,12 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
     }
     try {
       setRoundDataError('');
+      // Use the first available week for this round; weekId must be a valid FK to the Weeks table
+      const firstWeekId = weeks.length > 0 ? Number(weeks[0].id) : 1;
       await courseMaterialApi.createZoom({
         courseRoundId: Number(activeRoundId),
         createdByAccountId: Number(user.id),
-        weekId: 0,
+        weekId: firstWeekId,
         title: zoomForm.topic.trim(),
         description: zoomForm.description.trim() || undefined,
         startTimeUtc: new Date(zoomForm.meetingDateTime).toISOString(),
@@ -838,7 +860,7 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
       setSuccessMessage('');
       setRoundDataError(error?.message || 'Failed to create Zoom meeting. Check that Zoom credentials are configured.');
     }
-  }, [activeRoundId, user?.id, reloadRoundData, zoomForm]);
+  }, [activeRoundId, user?.id, reloadRoundData, zoomForm, weeks]);
 
   const handleDeleteZoomMeeting = useCallback(
     async (id: number) => {
@@ -1038,7 +1060,7 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
   }, [activeRoundId, selectedInstructorIds]);
 
   const weeksSorted = useMemo(
-    () => weeks.slice().sort((a, b) => a.startDate.localeCompare(b.startDate)),
+    () => weeks.slice().sort((a, b) => (a.startDate || '').localeCompare(b.startDate || '')),
     [weeks]
   );
 
@@ -1604,9 +1626,51 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
                     </Box>
 
                     <Typography variant="h5" sx={{ fontWeight: 800, mb: 3 }}>
-                      What you&apos;ll learn
+                      Course Curriculum
                     </Typography>
-                    <Grid container spacing={2}>
+                    
+                    {materialsByWeek.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {materialsByWeek.map((week, idx) => (
+                          <Box key={week.weekId} sx={{ 
+                            p: 2, 
+                            borderRadius: 3, 
+                            bgcolor: alpha(theme.palette.background.default, 0.4),
+                            border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                            transition: 'all 0.2s',
+                            '&:hover': { bgcolor: alpha(theme.palette.background.default, 0.6) }
+                          }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                              <Typography variant="subtitle1" fontWeight={800}>
+                                Week {idx + 1}: {week.weekTitle}
+                              </Typography>
+                              <Chip 
+                                label={`${week.items.length} Lessons`} 
+                                size="small" 
+                                sx={{ fontWeight: 700, bgcolor: alpha(theme.palette.primary.main, 0.1), color: 'primary.main' }} 
+                              />
+                            </Box>
+                            
+                            {week.items.length > 0 && (
+                              <Box sx={{ pl: 1, borderLeft: `2px solid ${alpha(theme.palette.primary.main, 0.2)}`, ml: 1 }}>
+                                {week.items.slice(0, 5).map((item, i) => (
+                                  <Typography key={item.main.id} variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, fontWeight: 500 }}>
+                                    <Iconify icon="solar:play-circle-bold" width={14} sx={{ opacity: 0.5 }} />
+                                    {item.main.title}
+                                  </Typography>
+                                ))}
+                                {week.items.length > 5 && (
+                                  <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 700, mt: 0.5, cursor: 'pointer' }} onClick={() => setCurrentTab(1)}>
+                                    + {week.items.length - 5} more lessons...
+                                  </Typography>
+                                )}
+                              </Box>
+                            )}
+                          </Box>
+                        ))}
+                      </Box>
+                    ) : (
+                      <Grid container spacing={2}>
                         {whatYouWillLearnItems.map((item, index) => (
                           <Grid size={{ xs: 12, sm: 6 }} key={item.id ?? index}>
                             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
@@ -1624,7 +1688,8 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
                             </Box>
                           </Grid>
                         ))}
-                    </Grid>
+                      </Grid>
+                    )}
                 </Card>
               </Grid>
 
@@ -2007,9 +2072,14 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
         {/* Curriculum Tab (Student view) */}
         {currentTab === 3 && (
           <Box sx={{ animation: `${fadeIn} 0.5s ease-out` }}>
-            <Typography variant="h5" sx={{ mb: 3, fontWeight: 800 }}>
-              Curriculum
-            </Typography>
+            <Box sx={{ mb: 4 }}>
+              <Typography variant="h4" sx={{ fontWeight: 800, background: `linear-gradient(45deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                Course Curriculum
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, mt: 0.5 }}>
+                {weeksSorted.length} Weeks • {displayCourse.totalLessons} Lessons
+              </Typography>
+            </Box>
 
             {whatYouWillLearnItems.length > 0 ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -2900,11 +2970,32 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
                     label="Link / URL"
                     value={materialForm.link}
                     onChange={(e) => setMaterialForm({ ...materialForm, link: e.target.value })}
-                    required
+                    required={!materialForm.file}
                     fullWidth
                     placeholder="https://example.com/material.pdf"
                     helperText={materialForm.materialTypeStatusId === 34 ? "Enter Zoom meeting link" : "Enter material link or URL"}
+                    disabled={!!materialForm.file}
                   />
+                  <Box sx={{ p: 2, border: `1px dashed ${theme.palette.divider}`, borderRadius: 1 }}>
+                    <Typography variant="caption" sx={{ display: 'block', mb: 1, fontWeight: 700 }}>
+                      OR UPLOAD FILE (PDF)
+                    </Typography>
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setMaterialForm({ ...materialForm, file, link: '', materialTypeStatusId: 32 });
+                        }
+                      }}
+                    />
+                    {materialForm.file && (
+                      <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 1, fontWeight: 800 }}>
+                         Selected: {materialForm.file.name}
+                      </Typography>
+                    )}
+                  </Box>
                   <FormControl fullWidth>
                     <InputLabel>Material Type</InputLabel>
                     <Select
@@ -2924,7 +3015,7 @@ export function CourseRoomView({ courseId: propCourseId }: { courseId?: string }
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setMaterialDialogOpen(false)}>Cancel</Button>
-                <Button variant="contained" onClick={handleCreateMaterial} disabled={!materialForm.title.trim() || !materialForm.link.trim()}>
+                <Button variant="contained" onClick={handleCreateMaterial} disabled={!materialForm.title.trim() || (!materialForm.link.trim() && !materialForm.file)}>
                   Add Material
                 </Button>
               </DialogActions>
