@@ -148,7 +148,7 @@ describe('EngineerCourseManagementView', async () => {
     await waitFor(() => expect(courseApi.getCourses).toHaveBeenCalled());
 
     // Open action menu for first course by clicking its menu button
-    const rows = screen.getAllByText(/PRICE$/i).map((el) => el.closest('div'));
+    const rows = screen.getAllByText(/PRICE$/i).map((el: any) => el.closest('div'));
     const firstRow = rows[0]!.parentElement!.parentElement!; // navigate to row container
     const menuButton = within(firstRow).getByRole('button');
 
