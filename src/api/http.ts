@@ -53,29 +53,34 @@ http.interceptors.response.use(
     return response;
   },
   (error: unknown) => {
-    // Handle 401 Unauthorized - clear token and redirect to login
     if (axios.isAxiosError(error)) {
-      // Don't redirect on network/CORS errors - let the component handle it
-      if (error.response?.status === 401 && !error.code) {
+      const status = error.response?.status;
+
+      // Determine if the user is currently on an auth page.
+      // If so, the auth component handles ALL errors itself — we must not
+      // clear tokens, redirect, or interfere in any way.
+      const currentPath = window.location.pathname.toLowerCase();
+      const authPaths = ['/sign-in', '/sign-up', '/forgot-password', '/reset-password'];
+      const isOnAuthPage = authPaths.some(
+        (p) => currentPath === p || currentPath.startsWith(`${p}/`) || currentPath.startsWith(`${p}?`)
+      );
+
+      // Handle 401 Unauthorized — only for expired sessions on non-auth pages
+      if (status === 401 && !isOnAuthPage) {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('user');
         localStorage.removeItem('auth_user');
-        // Redirect to login if not already on auth pages or reset password page
-        const currentPath = window.location.pathname;
-        const authPaths = ['/sign-in', '/sign-up', '/forgot-password', '/reset-password'];
-        if (!authPaths.includes(currentPath)) {
-          window.location.href = '/sign-in';
-        }
+        window.location.href = '/sign-in';
       }
-      
+
       // Handle 429 Too Many Requests
-      if (error.response?.status === 429) {
-        const retryAfter = error.response.headers['retry-after'];
+      if (status === 429) {
+        const retryAfter = error.response?.headers['retry-after'];
         console.warn(`Rate limited. Retry after ${retryAfter} seconds`);
       }
-      
+
       // Handle 423 Locked (Account locked)
-      if (error.response?.status === 423) {
+      if (status === 423) {
         console.error('Account is locked. Please try again later.');
       }
     }

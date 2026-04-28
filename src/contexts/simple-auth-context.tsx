@@ -227,7 +227,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [state.user]);
 
   const login = useCallback(async (email: string, password: string, persistent = true) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
+    // NOTE: Do NOT dispatch SET_LOADING here.
+    // The sign-in view manages its own loading state.
+    // Dispatching SET_LOADING causes GuestGuard to unmount/remount the form,
+    // destroying all user input and error messages.
 
     try {
       const response = await authApi.login({ email: email.trim(), password });
@@ -245,14 +248,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       dispatch({ type: 'LOGIN', payload: user });
       return user;
     } catch (error: unknown) {
-      dispatch({ type: 'SET_LOADING', payload: false });
       if (error instanceof Error) throw error;
       throw new Error('Login failed.');
     }
   }, []);
 
   const loginWithGoogle = useCallback(async (idToken: string, persistent = true) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
+    // NOTE: Do NOT dispatch SET_LOADING here — same reason as login().
 
     try {
       const response = await authApi.googleAuth({ idToken });
@@ -279,7 +281,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       dispatch({ type: 'LOGIN', payload: user });
       return user;
     } catch (error: unknown) {
-      dispatch({ type: 'SET_LOADING', payload: false });
       if (error instanceof Error) throw error;
       throw new Error('Google authentication failed.');
     }
@@ -295,7 +296,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       phone: string;
       educationalLevelId: number;
     }) => {
-      dispatch({ type: 'SET_LOADING', payload: true });
+      // NOTE: Do NOT dispatch SET_LOADING here — same reason as login().
 
       try {
         const response = await authApi.signup({
@@ -324,7 +325,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         dispatch({ type: 'LOGIN', payload: user });
         return user;
       } catch (error: unknown) {
-        dispatch({ type: 'SET_LOADING', payload: false });
         if (error instanceof Error) throw error;
         throw new Error('Registration failed.');
       }
