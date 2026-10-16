@@ -1,46 +1,52 @@
-## Courses System
+# GenZCoders — Learning Platform UI
 
-![license](https://img.shields.io/badge/license-MIT-blue.svg)
+A React and TypeScript web application for course and learning-platform workflows. The project uses a Vite-based development toolchain and a component-driven UI built with Material UI.
 
-![preview](public/assets/images/courses-preview.jpg)
+## Technology
 
-> A modern React-based Courses Management System built with Material-UI components and React + Vite.js.
+- React 19 and TypeScript
+- Vite
+- Material UI and Emotion
+- React Router
+- Firebase integration
+- Monaco Editor
+- Three.js / React Three Fiber
+- Zoom Meeting SDK
+- Vitest and Testing Library tooling
 
-## Pages
+## Getting started
 
-- [Dashboard](http://localhost:3039/)
-- [Courses](http://localhost:3039/courses)
-- [Instructors](http://localhost:3039/instructors)
-- [Students](http://localhost:3039/students)
-- [Enrollments](http://localhost:3039/enrollments)
-- [Sign in](http://localhost:3039/sign-in)
-- [Not found](http://localhost:3039/404)
+### Requirements
 
-## Quick start
+- Node.js 20 or newer
+- Yarn 1.22.x (the repository declares Yarn as its package manager); npm may also work
 
-- Clone the repo: `git clone https://github.com/your-org/courses-system.git`
-- Recommended: `Node.js v20.x`
-- **Install:** `npm i` or `yarn install`
-- **Start:** `npm run dev` or `yarn dev`
-- **Build:** `npm run build` or `yarn build`
-- Open browser: `http://localhost:3039`
+```bash
+git clone https://github.com/zeyadmohammeds/GenZCodersFrontend.git
+cd GenZCodersFrontend
+yarn install
+yarn dev
+```
 
-## Features
+Use the local URL printed by Vite in the terminal.
 
-- **Course Management**: Create, update, and manage courses
-- **Instructor Management**: Manage instructor profiles and assignments
-- **Student Management**: Track student information and progress
-- **Enrollment System**: Handle course enrollments and registrations
-- **Dashboard**: Overview of system statistics and analytics
-- **Authentication**: Secure login and user management
-- **Responsive Design**: Works seamlessly on desktop and mobile devices
-- **Material-UI Components**: Modern and professional UI components
-- **Real-time Updates**: Live data synchronization
+## Useful commands
 
-## License
+```bash
+yarn build       # Type-check and create the production build
+yarn lint        # Run ESLint
+yarn test        # Run Vitest
+yarn fm:check    # Check formatting
+```
 
-Distributed under the [MIT](https://github.com/your-org/courses-system/blob/main/LICENSE.md) license.
+## Configuration and security
 
-## Contact us
+Check the source for required environment variables and integration setup before running the application. Never commit API keys, service-account files, tokens, passwords, or production secrets. Use environment variables and the hosting provider's secret store.
 
-Email: support@courses-system.com
+## Project scope
+
+This repository is the frontend application. A working deployment may also require API/backend services and configuration for third-party integrations. Confirm those dependencies for your environment.
+
+## Maintainer
+
+**Zeyad Mohammed** — [GitHub](https://github.com/zeyadmohammeds) · [Portfolio](https://zeyadmohammeds.vercel.app/)
